@@ -1,0 +1,11 @@
+7-Zip-JBinding-4Android Release-16.02-2.03
+https://github.com/omicronapps/7-Zip-JBinding-4Android/tree/Release-16.02-2.03
+LGPL 2.1 plus the unRAR restriction for the RAR decoder. This application uses
+an unmodified prebuilt Android library from JitPack, dynamically loaded as JNI.
+The source repository includes the engine, JNI wrapper and build configuration.
+The LGPL and engine notice are included beside this file.
+
+Zstd JNI 1.5.7-11 (Android AAR)
+https://github.com/luben/zstd-jni/tree/v1.5.7-11
+JNI bindings: BSD 2-clause. Zstandard: BSD 3-clause or GPLv2; BSD option used.
+The source repository includes native code, notices and Android build configuration.

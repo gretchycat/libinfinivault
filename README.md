@@ -1,2 +1,17 @@
 # libinfinivault
-Archives, virtual filesystems, partitions and disk-image processing
+
+Structural extraction from gretchycat/infinifolder at 9233495.
+Implementation ownership and validation are recorded in SOURCE_PROVENANCE.md.
+
+Build using JDK 17+ and Gradle 9.7.1. Android adapters need SDK 36/min API 26.
+Run `gradle :vault-android:testDebugUnitTest` and the relevant assemble task.
+
+Source dependencies: libinfinistream, libinfinistore, libinfinisound. Clone them beside this repository (or set -PinfiniLibrariesDir). InfiniFolder pins the complete tested set as submodules; standalone builds use these same sources, not unpublished Maven binaries. Android codec/protocol backends remain in explicit Android modules.
+
+Original-code licensing is pending owner selection; see LICENSE.md. No original implementation is rewritten or relicensed by this move.
+
+## Current boundary
+
+`vault-android` owns archive readers/writers, mounted archive/image providers, nested image filesystems, compression, private mutation batches and ext/lwext4 JNI source builds. Store supplies resource access and publication services; it never depends on this module. VaultStreams exposes lazy entry SourceResources and translates common positional sources to existing parsers. Sequential decompression does not claim positional access; parser staging/index limitations remain explicit and unchanged. Mount/write callbacks, revision verification/recovery and read-only format restrictions are preserved.
+
+JNI classes/load names, native CMake/Termux scripts and third-party notices follow the code. Desktop/iOS portability of all parsers is future work; this is the existing Android-compatible implementation. Existing 7-Zip AAR and zstd packaging require an F-Droid source-build review; no additional opaque native blobs were introduced.
