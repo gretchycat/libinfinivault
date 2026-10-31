@@ -1,5 +1,15 @@
 # Source provenance
 
+## EPUB ZIP staging extraction
+
+At InfiniFolder `28fcc48`, `viewer-epub/.../EpubViewerActivity.kt` (SHA-256
+`34e4e751dfdcf2d701683ced5c0d87a5a71156721707077f9a43814be955ed1d`)
+used Java ZipFile to expand all resources through the host's DiskCache.Lease.
+`VaultZipExtraction.kt` retains that platform ZIP implementation and explicit
+staging path, adding cooperative cancellation, typed copy counts and unsafe-path
+reporting. The host still supplies capacity-checked output streams and owns its
+leases. No archive codec, third-party dependency or license was changed.
+
 Extracted structurally from [gretchycat/infinifolder](https://github.com/gretchycat/infinifolder) baseline 9233495, after compatibility checkpoint b893dfd. Original packages/JNI names and notices are retained. Historical commits remain in the upstream repository; the table records original source paths and SHA-256 at extraction. No codec or filesystem rewrite is part of this move. Root licensing is pending; see LICENSE.md.
 
 | Original path | Extracted path | Original SHA-256 |
