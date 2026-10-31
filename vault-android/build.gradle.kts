@@ -30,6 +30,7 @@ if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
     }
 }
 dependencies {
+    api("io.github.gretchycat.libinfinisound:audio-api:0.2.0")
     api("io.github.gretchycat.libinfinistore:store-android:0.1.0")
     api("io.github.gretchycat.libinfinistream:stream-core:0.1.0")
     implementation("com.github.omicronapps:7-Zip-JBinding-4Android:Release-16.02-2.03")

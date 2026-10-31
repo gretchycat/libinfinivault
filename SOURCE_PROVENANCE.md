@@ -97,3 +97,4 @@ Extracted structurally from [gretchycat/infinifolder](https://github.com/gretchy
 | `storage-engine/src/main/cpp/third_party/lwext4/src/ext4_xattr.c` | `vault-android/src/main/cpp/third_party/lwext4/src/ext4_xattr.c` | `53c1c8f1b9ad04f17ee53864aecadb6889a40d573966456bec13e12bcaecf650` |
 | `storage-engine/src/main/cpp/third_party/lwext4/include/misc/queue.h` | `vault-android/src/main/cpp/third_party/lwext4/include/misc/queue.h` | `cc8e16d9224059f90a21d099f583846e46ec8064768dfe0d6bf1816046bd6f89` |
 | `storage-engine/src/main/cpp/third_party/lwext4/include/misc/tree.h` | `vault-android/src/main/cpp/third_party/lwext4/include/misc/tree.h` | `624a1078f719dacbc82f0271a2b3d0b571a947e3b75f9ad0eac15dd262fd36d4` |
+| `storage-engine/src/main/java/com/infinifolder/playlist/PlaylistParser.kt` | `vault-android/src/main/java/com/infinifolder/playlist/PlaylistParser.kt` | `020d3a953323325b86867eaa0661732eda65969d89e2e7e0c30b906956d0a544` |
