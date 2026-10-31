@@ -108,3 +108,10 @@ Extracted structurally from [gretchycat/infinifolder](https://github.com/gretchy
 | `storage-engine/src/main/cpp/third_party/lwext4/include/misc/queue.h` | `vault-android/src/main/cpp/third_party/lwext4/include/misc/queue.h` | `cc8e16d9224059f90a21d099f583846e46ec8064768dfe0d6bf1816046bd6f89` |
 | `storage-engine/src/main/cpp/third_party/lwext4/include/misc/tree.h` | `vault-android/src/main/cpp/third_party/lwext4/include/misc/tree.h` | `624a1078f719dacbc82f0271a2b3d0b571a947e3b75f9ad0eac15dd262fd36d4` |
 | `storage-engine/src/main/java/com/infinifolder/playlist/PlaylistParser.kt` | `vault-android/src/main/java/com/infinifolder/playlist/PlaylistParser.kt` | `020d3a953323325b86867eaa0661732eda65969d89e2e7e0c30b906956d0a544` |
+
+## 2026-10-31 — non-extracting seekable views
+
+`ArchiveStorageProvider.openStreamingSeekable` is original integration code. It
+reuses existing native entry slices, reports unsupported when unavailable and
+avoids the legacy full-entry extraction fallback, including nested probes.
+The existing `openSeekable` behavior remains available to compatibility callers.

@@ -37,3 +37,13 @@ Six new focused cases cover ordinary/empty resources, confinement, output-capaci
 failures, cancellation before/during copy and invalid archives. The current
 standalone Vault suite has nine passing cases; InfiniFolder's separate full
 storage suite retains its documented pre-existing failures.
+
+## Non-extracting streaming views
+
+`ArchiveStorageProvider.openStreamingSeekable(ref)` returns only an existing
+native entry view (for example stored ZIP or a filesystem/partition slice). It
+returns Unsupported when that would require entry extraction, including nested
+parents without native views. The legacy `openSeekable` extraction fallback is
+retained for existing callers. Video uses native views where available and
+reopenable entry streams for compressed ZIP input. Outer-container and other
+format-specific caching limits remain unchanged.

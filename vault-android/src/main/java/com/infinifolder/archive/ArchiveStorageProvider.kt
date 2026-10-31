@@ -289,7 +289,14 @@ class ArchiveStorageProvider(
 
     private val seekDepth = ThreadLocal.withInitial { 0 }
 
-    override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> {
+    override fun openSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> =
+        openSeekableView(ref, writable, allowExtraction = true)
+
+    /** Native slices only. Streaming consumers must not trigger whole-entry extraction. */
+    fun openStreamingSeekable(ref: ResourceRef): ProviderResult<BlockDevice> =
+        openSeekableView(ref, writable = false, allowExtraction = false)
+
+    private fun openSeekableView(ref: ResourceRef, writable: Boolean, allowExtraction: Boolean): ProviderResult<BlockDevice> {
         if (writable) return ProviderResult.Unsupported(ResourceCapability.SEEK_WRITE)
         val depth = seekDepth.get() ?: 0
         if (depth >= SeekableSourceResolver.MAX_NESTING_DEPTH) return ProviderResult.Failure("Container nesting limit exceeded")
@@ -299,7 +306,13 @@ class ArchiveStorageProvider(
             val uri = Uri.parse(ref.documentId)
             val source = ArchiveUri.getSourceUri(uri)
             val path = ArchiveUri.getEntryPath(uri)
-            parentDevice = resolveSource(source).third
+            parentDevice = if (!allowExtraction && ArchiveUri.isArchiveUri(source)) {
+                when (val parent = openSeekableView(ResourceRef(id, source.toString()), false, allowExtraction = false)) {
+                    is ProviderResult.Success -> parent.value
+                    is ProviderResult.Unsupported -> return ProviderResult.Unsupported(ResourceCapability.SEEK)
+                    is ProviderResult.Failure -> return parent
+                }
+            } else resolveSource(source).third
             val slice = if (ArchiveUri.isDeletedView(uri)) null else parentDevice?.let { reader.getEntryBlockDevice(getSourceName(source), path, it) }
             if (slice != null) {
                 val owner = parentDevice!!
@@ -314,6 +327,7 @@ class ArchiveStorageProvider(
             } else {
                 parentDevice?.close()
                 parentDevice = null
+                if (!allowExtraction) return ProviderResult.Unsupported(ResourceCapability.SEEK)
                 val snapshot = extractToCache(uri)
                 val device = FileBlockDevice(java.io.RandomAccessFile(snapshot, "r"), true, ownsFile = true)
                 ProviderResult.Success(object : BlockDevice by device {
