@@ -76,14 +76,21 @@ class ArchiveStorageProvider(
 
     override fun readTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> { return try {
         val uri = Uri.parse(ref.documentId)
-        if (ArchiveUri.isDeletedView(uri)) return super<StorageProvider>.readTransferMetadata(ref)
+        if (ArchiveUri.isDeletedView(uri)) return readBasicTransferMetadata(ref)
         val source = ArchiveUri.getSourceUri(uri)
-        if (!ArchiveFormats.isDiscImage(getSourceName(source))) return super<StorageProvider>.readTransferMetadata(ref)
+        if (!ArchiveFormats.isDiscImage(getSourceName(source))) return readBasicTransferMetadata(ref)
         val (input, file, dev) = resolveSource(source)
         val metadata = try { reader.readTransferMetadata(getSourceName(source), ArchiveUri.getEntryPath(uri), input, file, dev) }
             finally { dev?.close() }
-        if (metadata == null) super<StorageProvider>.readTransferMetadata(ref) else ProviderResult.Success(metadata)
+        if (metadata == null) readBasicTransferMetadata(ref) else ProviderResult.Success(metadata)
     } catch (error: Exception) { ProviderResult.Failure(error.message ?: "Cannot read transfer metadata", error) } }
+
+    private fun readBasicTransferMetadata(ref: ResourceRef): ProviderResult<TransferMetadata> =
+        when (val result = statEntry(ref, includeWriteCapability = false)) {
+            is ProviderResult.Success -> ProviderResult.Success(TransferMetadata.from(result.value.metadata))
+            is ProviderResult.Failure -> result
+            is ProviderResult.Unsupported -> result
+        }
 
     override fun applyTransferMetadata(ref: ResourceRef, metadata: TransferMetadata): ProviderResult<Unit> { return try {
         val uri = Uri.parse(ref.documentId)
@@ -237,17 +244,21 @@ class ArchiveStorageProvider(
         val resolvedStr = "${source.scheme}://${source.authority ?: ""}$normalizedPath"
         return ArchiveUri.uriFactory(resolvedStr)
     }
-    override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = try {
+    override fun stat(ref: ResourceRef): ProviderResult<ResourceEntry> = statEntry(ref, includeWriteCapability = true)
+
+    // Source attribute capture needs catalog metadata, not a mutation-capability probe.
+    // Keep public stat/capabilities on the existing full write-safety path.
+    private fun statEntry(ref: ResourceRef, includeWriteCapability: Boolean): ProviderResult<ResourceEntry> = try {
         val uri = Uri.parse(ref.documentId)
         val source = ArchiveUri.getSourceUri(uri)
         val path = ArchiveUri.getEntryPath(uri)
         if (path.isEmpty()) {
             ProviderResult.Success(ResourceEntry(ref, ResourceMetadata(getSourceName(source),
-                "vnd.android.document/directory", null, null, true, canWrite = isWritable(uri)), uri))
+                "vnd.android.document/directory", null, null, true, canWrite = includeWriteCapability && isWritable(uri)), uri))
         } else {
             val entry = getArchiveTree(source, ArchiveUri.isDeletedView(uri), path.substringBeforeLast('/', "")).getEntry(path) ?: throw IOException("Archive entry not found")
             ProviderResult.Success(ResourceEntry(ref, ResourceMetadata(entry.name, entry.mimeType,
-                entry.sizeBytes, entry.modifiedAtMillis, entry.isDirectory, canRead = entry.readError == null, canWrite = isWritable(uri),
+                entry.sizeBytes, entry.modifiedAtMillis, entry.isDirectory, canRead = entry.readError == null, canWrite = includeWriteCapability && isWritable(uri),
                 isSymbolicLink = entry.isSymbolicLink, linkTarget = entry.linkTarget,
                 permissionsMode = entry.permissionsMode,
                 permissionsFormatted = entry.permissionsMode?.let { com.infinifolder.storage.PermissionHelper.formatPosix(it, entry.isDirectory) },
