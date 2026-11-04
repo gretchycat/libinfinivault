@@ -18,6 +18,16 @@ JNI classes/load names, native CMake/Termux scripts and third-party notices foll
 
 The common-source entry adapter negotiates from the actual opened handle. It preserves positional access into existing parsers when available, and uses a bounded replay prefix for sequential sources. Detected container signatures select the parser even when the filename is misleading; original name/provenance and known entry warnings remain available. Positional identification has a bounded two-second probe budget and a few KiB of requested data; it never stages a large positional source just for identification. The existing Android mounted-provider compatibility path retains its format and mutation semantics during migration.
 
+The `ArchiveReader` compatibility path also checks content when the extension is
+already recognized, so a real ZIP named `.tar` reaches the ZIP reader. Detected
+outer gzip/bzip2/xz/zstd/Unix-compress compression is retained in the parser hint;
+compressed ZIP streams use the corresponding decompressor before the ZIP reader.
+Other archive/compression combinations retain their existing parser restrictions.
+This selects parsers without changing the host's displayed MIME identity or icon.
+Malformed input still fails in the real reader; detection does not fabricate a
+successful browse result or add write support. Remote/reopen costs and device
+browse acceptance remain separate checks.
+
 Playlist-container compatibility names now live alongside ArchiveReader in Vault and delegate to Sound's small audio-api module. Store no longer needs a media-library dependency; no playlist/CDDB algorithm or public package name changed.
 
 ## Leased ZIP resource expansion

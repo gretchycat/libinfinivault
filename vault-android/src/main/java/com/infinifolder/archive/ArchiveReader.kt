@@ -51,28 +51,42 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
         localFile: File?
     ): Pair<String, Boolean> {
         val rawExt = ArchiveFormats.containerExtension(archiveName)
-        if (!FileMagicDetector.isAmbiguousOrUnknown(archiveName, "application/x-known")) {
-            return rawExt to ArchiveFormats.isDiscImage(archiveName)
-        }
+        // The browser can identify a container by its bytes even when the extension
+        // is unfamiliar or misleading. Do the same here: otherwise an actual ZIP
+        // named *.tar (or *.xmind, *.kmz, etc.) reaches the generic TAR fallback.
         val magic = if (localFile != null && localFile.exists()) {
             FileMagicDetector.detect(localFile, peekCompressedPayload = true)
         } else {
             FileMagicDetector.detectFromStream(openStream)
         }
-        return when (magic?.mimeType) {
+
+        val actualFormat = when (magic?.mimeType) {
             "application/x-iso9660-image", "application/x-raw-disk-image",
             "application/x-virtualbox-vdi", "application/x-qemu-disk",
             "application/x-vmdk", "application/x-vhd", "application/x-vhdx" -> rawExt to true
-            "application/vnd.rar", "application/x-rar-compressed" -> "rar" to false
-            "application/x-arj" -> "arj" to false
-            "application/vnd.ms-cab-compressed", "application/x-cabinet" -> "cab" to false
-            "application/x-7z-compressed" -> "7z" to false
-            "application/zip" -> "zip" to false
-            "application/x-tar" -> (if (rawExt in setOf("gz", "bz2", "bz", "xz", "lzma", "zst")) "tar.$rawExt" else "tar") to false
-            "application/x-cpio" -> "cpio" to false
-            "application/x-archive" -> "ar" to false
-            else -> rawExt to ArchiveFormats.isDiscImage(archiveName)
+            "application/vnd.rar", "application/x-rar-compressed" -> compressedFormat("rar", magic.description) to false
+            "application/x-arj" -> compressedFormat("arj", magic.description) to false
+            "application/vnd.ms-cab-compressed", "application/x-cabinet" -> compressedFormat("cab", magic.description) to false
+            "application/x-7z-compressed" -> compressedFormat("7z", magic.description) to false
+            "application/zip" -> compressedFormat("zip", magic.description) to false
+            "application/x-tar" -> compressedFormat("tar", magic.description) to false
+            "application/x-cpio" -> compressedFormat("cpio", magic.description) to false
+            "application/x-archive" -> compressedFormat("ar", magic.description) to false
+            else -> null
         }
+        return actualFormat ?: (rawExt to ArchiveFormats.isDiscImage(archiveName))
+    }
+
+    private fun compressedFormat(format: String, description: String): String {
+        val outerCompression = when {
+            description.startsWith("Gzip-compressed ", ignoreCase = true) -> "gz"
+            description.startsWith("BZip2-compressed ", ignoreCase = true) -> "bz2"
+            description.startsWith("XZ-compressed ", ignoreCase = true) -> "xz"
+            description.startsWith("Zstandard-compressed ", ignoreCase = true) -> "zst"
+            description.startsWith("Unix compress-compressed ", ignoreCase = true) -> "z"
+            else -> null
+        }
+        return if (outerCompression == null) format else "$format.$outerCompression"
     }
 
     fun fileSystemInfo(archiveName: String, entryPath: String, openStream: () -> InputStream,
@@ -764,6 +778,11 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
     private fun openArchiveInputStream(raw: InputStream, ext: String): ArchiveInputStream<*> {
         val bis = BufferedInputStream(raw)
         return when {
+            ext == "zip.gz" -> ZipArchiveInputStream(GzipCompressorInputStream(bis))
+            ext == "zip.bz2" -> ZipArchiveInputStream(BZip2CompressorInputStream(bis))
+            ext == "zip.xz" -> ZipArchiveInputStream(XZCompressorInputStream(bis))
+            ext == "zip.zst" -> ZipArchiveInputStream(ZstdCompressorInputStream(bis))
+            ext == "zip.z" -> ZipArchiveInputStream(ZCompressorInputStream(bis))
             ext == "tar.gz" || ext == "tgz" ->
                 TarArchiveInputStream(GzipCompressorInputStream(bis))
             ext == "tar.z" || ext == "taz" -> TarArchiveInputStream(ZCompressorInputStream(bis))
