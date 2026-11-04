@@ -226,6 +226,20 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
         volumes: ArchiveVolumeSet? = null,
         directoryPath: String? = null
     ): ArchiveTree {
+        val request=ContainerReadRequest(this,archiveName,openStream,localFile,device,volumes,sourceUri,directoryPath)
+        return VaultCapabilities.extension(request)?.list(request)
+            ?:buildBuiltinTree(sourceUri,archiveName,openStream,localFile,device,volumes,directoryPath)
+    }
+
+    internal fun buildBuiltinTree(
+        sourceUri: Uri?,
+        archiveName: String,
+        openStream: () -> InputStream,
+        localFile: File? = null,
+        device: BlockDevice? = null,
+        volumes: ArchiveVolumeSet? = null,
+        directoryPath: String? = null
+    ): ArchiveTree {
         if (NativeArchiveReader.isSupported(archiveName) || resolveFormat(archiveName, openStream, localFile).first in setOf("rar", "arj", "cab")) {
             val catalog = nativeReader.catalog(nativeVolumes(archiveName, openStream, localFile, device, volumes))
             return buildTreeFromRawEntries(sourceUri, catalog.entries.map {
@@ -473,6 +487,11 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
         device: BlockDevice? = null,
         volumes: ArchiveVolumeSet? = null
     ): File {
+        val extensionRequest=ContainerReadRequest(this,archiveName,openStream,localFile,device,volumes)
+        VaultCapabilities.extension(extensionRequest)?.let { handler ->
+            handler.openEntry(extensionRequest,entryPath).use { input ->targetFile.outputStream().use { input.copyTo(it) } }
+            return targetFile
+        }
         if (NativeArchiveReader.isSupported(archiveName) || resolveFormat(archiveName, openStream, localFile).first in setOf("rar", "arj", "cab")) {
             val stream = nativeReader.openEntry(nativeVolumes(archiveName, openStream, localFile, device, volumes), normalizePath(entryPath))
             return stream.use { input -> targetFile.outputStream().use { input.copyTo(it) }; targetFile }
@@ -595,6 +614,19 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
      * Reads a single entry's bytes directly in-memory without saving anything to the cache directory.
      */
     fun openEntryStream(
+        archiveName: String,
+        entryPath: String,
+        openStream: () -> InputStream,
+        localFile: File? = null,
+        device: BlockDevice? = null,
+        volumes: ArchiveVolumeSet? = null
+    ): InputStream {
+        val request=ContainerReadRequest(this,archiveName,openStream,localFile,device,volumes)
+        return VaultCapabilities.extension(request)?.openEntry(request,entryPath)
+            ?:openBuiltinEntryStream(archiveName,entryPath,openStream,localFile,device,volumes)
+    }
+
+    internal fun openBuiltinEntryStream(
         archiveName: String,
         entryPath: String,
         openStream: () -> InputStream,

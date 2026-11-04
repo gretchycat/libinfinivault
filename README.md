@@ -1,5 +1,7 @@
 # libinfinivault
 
+Runtime discovery: [handler schema, registration, linked dependencies and limits](CAPABILITIES.md).
+
 Structural extraction from gretchycat/infinifolder at 9233495.
 Implementation ownership and validation are recorded in SOURCE_PROVENANCE.md.
 
