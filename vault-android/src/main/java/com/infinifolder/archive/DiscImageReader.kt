@@ -661,18 +661,18 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
             return BZip2CompressorInputStream(bis, true)
         }
         if (read >= 6 && u8(header, 0) == 0xFD && header[1] == '7'.code.toByte() && header[2] == 'z'.code.toByte()) {
-            return XZCompressorInputStream(bis, true)
+            return DecoderMemory.xz(bis)
         }
         if (read >= 4 && u8(header, 0) == 0x28 && u8(header, 1) == 0xB5 && u8(header, 2) == 0x2F && u8(header, 3) == 0xFD) {
-            return CompressorStreamFactory().createCompressorInputStream(bis)
+            return DecoderMemory.automatic(bis)
         }
 
         return when {
             lowerName.endsWith(".gz") -> GzipCompressorInputStream(bis, true)
             lowerName.endsWith(".bz2") || lowerName.endsWith(".bz") -> BZip2CompressorInputStream(bis, true)
-            lowerName.endsWith(".xz") -> XZCompressorInputStream(bis, true)
-            lowerName.endsWith(".lzma") -> LZMACompressorInputStream(bis)
-            lowerName.endsWith(".zst") -> CompressorStreamFactory().createCompressorInputStream(bis)
+            lowerName.endsWith(".xz") -> DecoderMemory.xz(bis)
+            lowerName.endsWith(".lzma") -> DecoderMemory.lzma(bis)
+            lowerName.endsWith(".zst") -> DecoderMemory.automatic(bis)
             lowerName.endsWith(".z") -> ZCompressorInputStream(bis)
             else -> bis
         }

@@ -59,3 +59,18 @@ parents without native views. The legacy `openSeekable` extraction fallback is
 retained for existing callers. Video uses native views where available and
 reopenable entry streams for compressed ZIP input. Outer-container and other
 format-specific caching limits remain unchanged.
+
+## Native entry windows
+
+The optional Store `NativeRandomAccessProvider` contract returns native slices
+without extraction. Stored ZIP, uncompressed AR/TAR/CPIO and supported image
+filesystem members can expose direct offset reads; compressed entries remain
+sequential. Nested sources propagate unsupported direct access rather than
+silently materializing an enclosing entry. Built-in sequential and 7z entry reads
+return owned streams, keeping their parser alive until close instead of making a
+whole-entry byte array. Consumers must close these streams.
+
+Store's shared `DecoderMemory` caps XZ/LZMA and built-in Commons 7z dictionaries
+at one eighth of heap, clamped to 16–64 MiB; larger dictionary requirements fail
+with a memory-limit error. This is separate from disk-cache capacity. Unsupported
+native writes retain the existing archive publication/read-only rules.

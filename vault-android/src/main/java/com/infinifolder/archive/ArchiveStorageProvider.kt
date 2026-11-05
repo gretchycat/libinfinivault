@@ -1,5 +1,7 @@
 package com.infinifolder.archive
 
+import com.infinifolder.storage.openNativeSeekable
+
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
@@ -19,7 +21,7 @@ class ArchiveStorageProvider(
     private val context: Context,
     private val localProvider: LocalStorageProvider? = null,
     private val customCacheDir: File? = null
-) : StorageProvider {
+) : StorageProvider, com.infinifolder.storage.NativeRandomAccessProvider {
 
     override val id: String = "archive"
     override val features = BackendFeatures(randomRead = Support.SUPPORTED, randomWrite = Support.UNSUPPORTED, creation = CreationGuarantee.EXCLUSIVE, rename = Support.UNSUPPORTED, delete = Support.UNKNOWN, nativeLinks = Support.SUPPORTED)
@@ -306,6 +308,8 @@ class ArchiveStorageProvider(
     /** Native slices only. Streaming consumers must not trigger whole-entry extraction. */
     fun openStreamingSeekable(ref: ResourceRef): ProviderResult<BlockDevice> =
         openSeekableView(ref, writable = false, allowExtraction = false)
+    override fun openNativeSeekable(ref: ResourceRef, writable: Boolean): ProviderResult<BlockDevice> =
+        openSeekableView(ref, writable, allowExtraction = false)
 
     private fun openSeekableView(ref: ResourceRef, writable: Boolean, allowExtraction: Boolean): ProviderResult<BlockDevice> {
         if (writable) return ProviderResult.Unsupported(ResourceCapability.SEEK_WRITE)
@@ -711,14 +715,10 @@ class ArchiveStorageProvider(
         val sourceUri = ArchiveUri.getSourceUri(archiveUri)
         val entryPath = ArchiveUri.getEntryPath(archiveUri)
         val archiveName = getSourceName(sourceUri)
-        // Batch refs already identify the requested entry. FAT's path reader
-        // resolves names and aliases itself; rebuilding every directory here
-        // makes verifying N small writes repeatedly scan the growing image.
-        val canonicalPath = if (trustedBatchSources.contains(sourceUri.toString())) entryPath
-            else (try { getArchiveTree(sourceUri, ArchiveUri.isDeletedView(archiveUri), entryPath.substringBeforeLast('/', "")) } catch (_: Exception) { null })?.getEntry(entryPath)?.path ?: entryPath
-        // Resolve after canonicalization so refreshing a live image's directory
-        // cannot leave the actual extraction bound to its older cached device.
-        val (openStream, localFile, dev) = resolveSource(sourceUri)
+        // The URI identifies the entry. Readers already handle normalization,
+        // case fallback and filesystem aliases; do not build a whole catalog here.
+        val canonicalPath = entryPath
+        val (openStream, localFile, dev) = resolveStreamingSource(sourceUri)
         val stream = try { if (ArchiveUri.isDeletedView(archiveUri))
             reader.openDeletedFatEntry(archiveName, canonicalPath, openStream, localFile, dev)
             else reader.openEntryStream(archiveName, canonicalPath, openStream, localFile, dev, archiveVolumes(sourceUri)) }
@@ -726,6 +726,28 @@ class ArchiveStorageProvider(
         return object : java.io.FilterInputStream(stream) {
             override fun close() { try { super.close() } finally { dev?.close() } }
         }
+    }
+
+    /** A sequential entry read must not silently extract an enclosing archive. */
+    private fun resolveStreamingSource(source: Uri): Triple<() -> InputStream, File?, BlockDevice?> {
+        val backing = sourceProvider
+        val ref = backing?.refForUri(source)
+        if (backing != null && ref != null) {
+            return when (val opened = com.infinifolder.storage.validateSeekableResult(
+                backing.openNativeSeekable(ref, false), false)) {
+                is ProviderResult.Success -> Triple({ opened.value.asInputStream() }, null, opened.value)
+                is ProviderResult.Unsupported -> Triple({
+                    when (val stream = backing.openRead(ref)) {
+                        is ProviderResult.Success -> stream.value
+                        is ProviderResult.Failure -> throw IOException(stream.message, stream.cause)
+                        is ProviderResult.Unsupported -> throw IOException("Backing archive cannot be streamed")
+                    }
+                }, null, null)
+                is ProviderResult.Failure -> throw IOException(opened.message, opened.cause)
+            }
+        }
+        if (ArchiveUri.isArchiveUri(source)) return Triple({ openStream(source) }, null, null)
+        return resolveSource(source)
     }
 
     override fun list(parent: ResourceRef): ProviderResult<List<ResourceEntry>> = try {

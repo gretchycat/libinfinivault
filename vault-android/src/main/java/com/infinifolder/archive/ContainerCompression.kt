@@ -22,8 +22,8 @@ internal enum class ContainerCompression {
     fun input(raw: InputStream): InputStream = when (this) {
         GZIP -> GzipCompressorInputStream(raw, true)
         BZIP2 -> BZip2CompressorInputStream(raw, true)
-        XZ -> XZCompressorInputStream(raw, true)
-        LZMA -> LZMACompressorInputStream(raw)
+        XZ -> DecoderMemory.xz(raw)
+        LZMA -> DecoderMemory.lzma(raw)
     }
 
     fun output(raw: OutputStream, size: Long): OutputStream = when (this) {

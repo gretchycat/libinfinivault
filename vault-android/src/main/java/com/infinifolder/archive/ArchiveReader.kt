@@ -149,6 +149,22 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
     ): BlockDevice? {
         val cleanTarget = normalizePath(entryPath)
         val ext = ArchiveFormats.containerExtension(archiveName)
+        if (ext in setOf("ar", "deb", "tar", "cbt", "cpio")) {
+            openArchiveInputStream(device.asInputStream(), ext).use { stream ->
+                var entry = stream.nextEntry
+                while (entry != null) {
+                    if (normalizePath(entry.name) == cleanTarget) {
+                        val offset = stream.bytesRead
+                        if (!entry.isDirectory && entry.size >= 0 && offset <= device.size && entry.size <= device.size - offset &&
+                            (entry !is TarArchiveEntry || !entry.isSparse) && stream.canReadEntryData(entry))
+                            return PartitionSliceBlockDevice(device, offset, entry.size, device.isReadOnly)
+                        return null
+                    }
+                    entry = stream.nextEntry
+                }
+            }
+            return null
+        }
         if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
             try {
                 ZipFile.builder().setSeekableByteChannel(device.asSeekableByteChannel()).get().use { zf ->
@@ -405,7 +421,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
     }
 
     private fun read7zEntries(device: BlockDevice): List<RawEntry> {
-        return SevenZFile.builder().setSeekableByteChannel(device.asSeekableByteChannel()).get().use { sz ->
+        return SevenZFile.builder().setMaxMemoryLimitKb(DecoderMemory.limitKiB).setSeekableByteChannel(device.asSeekableByteChannel()).get().use { sz ->
             val list = mutableListOf<RawEntry>()
             var entry = sz.nextEntry
             while (entry != null) {
@@ -422,7 +438,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
     }
 
     private fun read7zEntries(file: File): List<RawEntry> {
-        return SevenZFile.builder().setFile(file).get().use { sz ->
+        return SevenZFile.builder().setMaxMemoryLimitKb(DecoderMemory.limitKiB).setFile(file).get().use { sz ->
             val list = mutableListOf<RawEntry>()
             var entry = sz.nextEntry
             while (entry != null) {
@@ -517,7 +533,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
 
         if (ext == "7z" || ext == "cb7") {
             if (effectiveDev != null) {
-                SevenZFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get().use { sz ->
+                SevenZFile.builder().setMaxMemoryLimitKb(DecoderMemory.limitKiB).setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get().use { sz ->
                     var entry = sz.nextEntry
                     while (entry != null) {
                         val norm = normalizePath(entry.name)
@@ -538,7 +554,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             }
             val file = localFile ?: materializeTempArchive(openStream)
             try {
-                SevenZFile.builder().setFile(file).get().use { sz ->
+                SevenZFile.builder().setMaxMemoryLimitKb(DecoderMemory.limitKiB).setFile(file).get().use { sz ->
                     var entry = sz.nextEntry
                     while (entry != null) {
                         val norm = normalizePath(entry.name)
@@ -714,52 +730,28 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
         }
 
         if (ext == "7z" || ext == "cb7") {
-            if (effectiveDev != null) {
-                val sz = SevenZFile.builder().setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get()
-                try {
-                    var entry = sz.nextEntry
-                    while (entry != null) {
-                        val norm = normalizePath(entry.name)
-                        if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
-                            val content = ByteArray(entry.size.toInt().coerceAtLeast(0))
-                            var read = 0
-                            while (read < content.size) {
-                                val count = sz.read(content, read, content.size - read)
-                                if (count <= 0) break
-                                read += count
-                            }
-                            return java.io.ByteArrayInputStream(content)
-                        }
-                        entry = sz.nextEntry
-                    }
-                } finally {
-                    sz.close()
-                }
-                throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
-            }
-            val file = localFile ?: materializeTempArchive(openStream)
-            val sz = SevenZFile.builder().setFile(file).get()
+            val temporary = if (effectiveDev == null && localFile == null) materializeTempArchive(openStream) else null
+            val sz = try {
+                val builder = SevenZFile.builder().setMaxMemoryLimitKb(DecoderMemory.limitKiB)
+                if (effectiveDev != null) builder.setSeekableByteChannel(effectiveDev.asSeekableByteChannel()).get()
+                else builder.setFile(localFile ?: temporary!!).get()
+            } catch (error: Exception) { temporary?.delete(); throw error }
             try {
                 var entry = sz.nextEntry
                 while (entry != null) {
                     val norm = normalizePath(entry.name)
                     if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
-                        val content = ByteArray(entry.size.toInt().coerceAtLeast(0))
-                        var read = 0
-                        while (read < content.size) {
-                            val count = sz.read(content, read, content.size - read)
-                            if (count <= 0) break
-                            read += count
+                        return object : InputStream() {
+                            private var closed = false
+                            override fun read(): Int = sz.read()
+                            override fun read(bytes: ByteArray, offset: Int, length: Int): Int = sz.read(bytes, offset, length)
+                            override fun close() { if (!closed) { closed = true; try { sz.close() } finally { temporary?.delete() } } }
                         }
-                        return java.io.ByteArrayInputStream(content)
                     }
                     entry = sz.nextEntry
                 }
-            } finally {
-                sz.close()
-                if (localFile == null) file.delete()
-            }
-            throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
+                throw NoSuchElementException("Entry not found in 7z archive: $entryPath")
+            } catch (error: Exception) { try { sz.close() } finally { temporary?.delete() }; throw error }
         }
 
         if (ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz") {
@@ -779,24 +771,22 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             }
         }
 
+        val raw = openStream()
+        val ais = try { openArchiveInputStream(raw, ext) } catch (error: Exception) { raw.close(); throw error }
         try {
-            openArchiveInputStream(openStream(), ext).use { ais ->
-                var entry = ais.nextEntry
-                while (entry != null) {
-                    val norm = normalizePath(entry.name)
-                    if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) {
-                        val bytes = ais.readBytes()
-                        return java.io.ByteArrayInputStream(bytes)
-                    }
-                    entry = ais.nextEntry
-                }
+            var entry = ais.nextEntry
+            while (entry != null) {
+                val norm = normalizePath(entry.name)
+                if (norm == cleanTarget || norm.equals(cleanTarget, ignoreCase = true)) return ais
+                entry = ais.nextEntry
             }
+            ais.close()
         } catch (primaryError: Exception) {
+            ais.close()
+            if (primaryError is org.apache.commons.compress.MemoryLimitException) throw primaryError
             return try {
                 discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile)
-            } catch (_: Exception) {
-                throw primaryError
-            }
+            } catch (_: Exception) { throw primaryError }
         }
         return try {
             discImageReader.openEntryStream(archiveName, cleanTarget, openStream, localFile)
@@ -812,7 +802,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
         return when {
             ext == "zip.gz" -> ZipArchiveInputStream(GzipCompressorInputStream(bis))
             ext == "zip.bz2" -> ZipArchiveInputStream(BZip2CompressorInputStream(bis))
-            ext == "zip.xz" -> ZipArchiveInputStream(XZCompressorInputStream(bis))
+            ext == "zip.xz" -> ZipArchiveInputStream(DecoderMemory.xz(bis))
             ext == "zip.zst" -> ZipArchiveInputStream(ZstdCompressorInputStream(bis))
             ext == "zip.z" -> ZipArchiveInputStream(ZCompressorInputStream(bis))
             ext == "tar.gz" || ext == "tgz" ->
@@ -821,10 +811,10 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             ext == "tar.bz2" || ext == "tbz" || ext == "tbz2" || ext == "tar.bz" ->
                 TarArchiveInputStream(BZip2CompressorInputStream(bis))
             ext == "tar.xz" || ext == "txz" ->
-                TarArchiveInputStream(XZCompressorInputStream(bis))
+                TarArchiveInputStream(DecoderMemory.xz(bis))
             ext == "tar.zst" || ext == "tzst" -> TarArchiveInputStream(ZstdCompressorInputStream(bis))
             ext == "tar.lzma" || ext == "tlz" ->
-                TarArchiveInputStream(LZMACompressorInputStream(bis))
+                TarArchiveInputStream(DecoderMemory.lzma(bis))
             ext == "tar" || ext == "cbt" ->
                 TarArchiveInputStream(bis)
             ext == "zip" || ext == "jar" || ext == "apk" || ext == "aar" || ext == "cbz" ->
@@ -836,7 +826,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
             else -> {
                 // Try decompressor first, then archiver
                 val decompressed = try {
-                    CompressorStreamFactory().createCompressorInputStream(bis)
+                    DecoderMemory.automatic(bis)
                 } catch (_: Exception) {
                     bis
                 }
