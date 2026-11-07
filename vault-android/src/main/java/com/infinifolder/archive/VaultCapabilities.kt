@@ -1,6 +1,7 @@
 package com.infinifolder.archive
 
 import android.net.Uri
+import com.infinifolder.mime.MimeRegistry
 import com.infinifolder.storage.FileMagicDetector
 import io.github.gretchycat.infinistream.*
 import java.io.File
@@ -38,7 +39,7 @@ class VaultCapabilityProvider : CapabilityProvider {
 }
 private class BuiltinContainerHandler : ContainerCapabilityHandler {
     override val descriptor=HandlerDescriptor("vault.builtin","vault","Vault containers",
-        listOf(FormatSupport(extensions=ArchiveFormats.knownExtensions,
+        builtinFormatProfiles() + listOf(FormatSupport(
             magic=listOf(MagicSignature("504b0304",description="ZIP local header"),MagicSignature("504b0506",description="Empty ZIP"),
                 MagicSignature("377abcaf271c",description="7z"),MagicSignature("526172211a07",description="RAR")))),
         setOf(Operations.LIST,Operations.EXTRACT,Operations.READ),metadata=setOf("entries","size","modified","warnings","readError"),
@@ -56,4 +57,21 @@ private class BuiltinContainerHandler : ContainerCapabilityHandler {
         request.localFile,request.device,request.volumes,request.directoryPath)
     override fun openEntry(request:ContainerReadRequest,path:String)=request.reader.openBuiltinEntryStream(request.name,path,
         request.openStream,request.localFile,request.device,request.volumes)
+}
+
+/** Keep Android registration and the public catalog sourced from Vault's real selectors. */
+private fun builtinFormatProfiles(): List<FormatSupport> {
+    val supportedExtensions = ArchiveFormats.knownExtensions
+    val associations = MimeRegistry.declaredFormats().mapNotNull { profile ->
+        val matchingExtensions = profile.extensions intersect supportedExtensions
+        profile.copy(extensions = matchingExtensions).takeIf { matchingExtensions.isNotEmpty() }
+    }
+    val associatedExtensions = associations.flatMapTo(mutableSetOf()) { it.extensions }
+    val extensionOnly = supportedExtensions - associatedExtensions
+    return buildList {
+        // MIME selectors cover files whose provider supplies a MIME but no useful name.
+        add(FormatSupport(mimeTypes = ArchiveFormats.knownMimeTypes))
+        addAll(associations)
+        if (extensionOnly.isNotEmpty()) add(FormatSupport(extensions = extensionOnly))
+    }
 }
