@@ -45,6 +45,10 @@ gradle :vault-android:testDebugUnitTest :vault-android:assembleDebug --offline
 No browser process is required. Keep existing format regression suites; capability
 tests invoke actual services/parsers rather than scripted success responses.
 
+## New format modules
+
+New archive and filesystem-image handlers must validate structure with the actual parser, expose bounded metadata through `MetadataCapabilityHandler`, and test both a valid container and malformed/extension-mismatched input. Do not treat matching extensions or ZIP-like bytes as proof that the container can be browsed. Follow the shared [Stream conformance rule](../libinfinistream/CAPABILITIES.md#format-module-validation-and-metadata-requirements).
+
 ## Host audit record
 
 InfiniFolder's 2026-11-04 runtime-discovery audit exercises this repository through

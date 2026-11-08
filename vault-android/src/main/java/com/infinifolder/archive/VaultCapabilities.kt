@@ -42,7 +42,7 @@ private class BuiltinContainerHandler : ContainerCapabilityHandler {
         builtinFormatProfiles() + listOf(FormatSupport(
             magic=listOf(MagicSignature("504b0304",description="ZIP local header"),MagicSignature("504b0506",description="Empty ZIP"),
                 MagicSignature("377abcaf271c",description="7z"),MagicSignature("526172211a07",description="RAR")))),
-        setOf(Operations.LIST,Operations.EXTRACT,Operations.READ),metadata=setOf("entries","size","modified","warnings","readError"),
+        setOf(Operations.IDENTIFY,Operations.LIST,Operations.EXTRACT,Operations.READ),metadata=setOf("entries","size","modified","warnings","readError"),
         limitations=listOf("Format recognition is provisional until the parser opens", "Native dependencies and filesystem/codec subsets apply", "Mutation support must be queried on the mounted provider/resource; no universal archive write claim"),
         attributes=mapOf("container" to "true"))
     override fun availability()=HandlerAvailability(AvailabilityState.CONDITIONAL,"Individual native/filesystem features and input are validated by the actual reader")
