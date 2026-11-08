@@ -27,10 +27,19 @@ import java.util.TimeZone
  * - ext2 / ext3 / ext4 with both direct/indirect blocks and ext4 extent trees (.ext2, .ext3, .ext4, .img)
  * - Read-only BSD UFS1 / UFS2, little- and big-endian (.ufs, .ufs1, .ufs2, .img)
  * - Read-only NTFS 3.0/3.1 resident, nonresident and sparse data (.ntfs, .img)
+ * - Read-only Commodore DOS D64/D71/D81 directory and linked files
+ * - Read-only Atari 8-bit ATR DOS 2.x/MyDOS-compatible directory and files
+ * - Atari ST raw .st images through the existing validated FAT12/FAT16 reader
  * - MBR and GPT partitioned disk images (.img, .raw)
  * - Transparent decompression for .gz, .bz2, .bz, .xz, .lzma, .zst wrapped disc images
  */
 class DiscImageReader(private val tempDir: File, private val diskCache: com.infinifolder.storage.DiskCache? = null) {
+    private fun isBbcDoubleSided(archiveName: String): Boolean =
+        ArchiveFormats.archiveExtension(archiveName).startsWith("dsd", ignoreCase = true)
+    private fun appleSectorOrder(archiveName: String): AppleTwoFileSystem.SectorOrder =
+        if (ArchiveFormats.archiveExtension(archiveName).equals("po", true)) AppleTwoFileSystem.SectorOrder.PRODOS
+        else AppleTwoFileSystem.SectorOrder.DOS
+
     private val freshReads = ThreadLocal.withInitial { false }
     internal fun <T> withFreshReads(block: () -> T): T {
         val previous = freshReads.get()
@@ -62,7 +71,7 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         device: BlockDevice? = null
     ): List<DiscEntry> {
         return withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
-            parseDiscImage(dev)
+            parseDiscImage(dev, archiveName)
         }
     }
 
@@ -78,10 +87,10 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
     fun readDirectoryEntries(archiveName: String, directoryPath: String, openStream: () -> InputStream,
         localFile: File? = null, device: BlockDevice? = null): List<DiscEntry> =
         withBlockDevice(archiveName, openStream, localFile, writable = false, device = device) { dev ->
-            directoryEntries(dev, normalizePath(directoryPath))
+            directoryEntries(archiveName, dev, normalizePath(directoryPath))
         }
 
-    private fun directoryEntries(dev: BlockDevice, requested: String): List<DiscEntry> {
+    private fun directoryEntries(archiveName: String, dev: BlockDevice, requested: String): List<DiscEntry> {
         fun join(prefix: String, path: String) = if (prefix.isEmpty()) path else if (path.isEmpty()) prefix else "$prefix/$path"
         fun relativeTo(path: String, prefix: String): String? = when {
             path == prefix -> ""
@@ -92,6 +101,36 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
             resolve: (BlockDevice) -> BlockDevice, depth: Int): List<DiscEntry> {
             RecoveryCancellation.check()
             if (depth > 16) throw IOException("Image volume nesting limit exceeded")
+            if (AtariAtrFileSystem.isSupported(source)) {
+                if (relative.isNotEmpty()) throw IOException("Atari ATR images expose a flat DOS directory")
+                return AtariAtrFileSystem(source).entries().map { it.copy(path = join(prefix, it.path)) }
+            }
+            if (CommodoreDosFileSystem.isSupported(source)) {
+                if (relative.isNotEmpty()) throw IOException("Commodore DOS disk images contain a flat directory")
+                return CommodoreDosFileSystem(source).entries().map { it.copy(path = join(prefix, it.path)) }
+            }
+            if (ThreeDoOperaFileSystem.isSupported(source)) {
+                return ThreeDoOperaFileSystem(source).entries().filter {
+                    normalizePath(it.path).substringBeforeLast('/', "") == relative
+                }.map { it.copy(path = join(prefix, it.path)) }
+            }
+            if (AmstradDskFileSystem.isSupported(source)) {
+                return AmstradDskFileSystem(source).entries().filter {
+                    normalizePath(it.path).substringBeforeLast('/', "") == relative
+                }.map { it.copy(path = join(prefix, it.path)) }
+            }
+            val appleOrder = appleSectorOrder(archiveName)
+            if (AppleTwoFileSystem.isSupported(source, appleOrder)) {
+                return AppleTwoFileSystem(source, appleOrder).entries().filter {
+                    normalizePath(it.path).substringBeforeLast('/', "") == relative
+                }.map { it.copy(path = join(prefix, it.path)) }
+            }
+            val bbcDoubleSided = isBbcDoubleSided(archiveName)
+            if (BbcDfsFileSystem.isSupported(source, bbcDoubleSided)) {
+                return BbcDfsFileSystem(source, bbcDoubleSided).entries().filter {
+                    normalizePath(it.path).substringBeforeLast('/', "") == relative
+                }.map { it.copy(path = join(prefix, it.path)) }
+            }
             if (LvmDecoder.isLvm(source)) {
                 val volumes = LvmDecoder.decode(source)
                 if (relative.isEmpty()) return volumes.map { DiscEntry(join(prefix, it.name), true, it.sizeBytes, null) }
@@ -127,7 +166,10 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         // Direct filesystems must be checked before partition-table heuristics.
         val direct = LvmDecoder.isLvm(dev) || isExtFs(dev, 0L) || isFatFs(dev, 0L) ||
             isExFat(dev, 0L) || isIso9660(dev, 0L) || NtfsFileSystem.isNtfs(dev) ||
-            HfsFileSystem.isHfs(dev) || UfsFileSystem.isUfs(dev)
+            HfsFileSystem.isHfs(dev) || UfsFileSystem.isUfs(dev) ||
+            AtariAtrFileSystem.isSupported(dev) || CommodoreDosFileSystem.isSupported(dev) ||
+            ThreeDoOperaFileSystem.isSupported(dev) || AppleTwoFileSystem.isSupported(dev, appleSectorOrder(archiveName)) ||
+            BbcDfsFileSystem.isSupported(dev, isBbcDoubleSided(archiveName)) || AmstradDskFileSystem.isSupported(dev)
         if (direct) return filesystem(dev, requested, "", { it }, 0)
         val partitions = detectPartitions(dev)
         if (partitions.isEmpty()) throw IOException("Unsupported or unrecognized disc image format")
@@ -267,7 +309,7 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
                 targetFile.outputStream().use { FatFileSystem(dev).extractFile(cleanTarget, it) }
                 return@withBlockDevice
             }
-            val entries = directoryEntries(dev, cleanTarget.substringBeforeLast('/', ""))
+            val entries = directoryEntries(archiveName, dev, cleanTarget.substringBeforeLast('/', ""))
             val match = entries.firstOrNull { normalizePath(it.path) == cleanTarget }
                 ?: entries.firstOrNull { normalizePath(it.path).equals(cleanTarget, ignoreCase = true) }
                 ?: throw NoSuchElementException("Entry not found in disc image: $entryPath")
@@ -297,6 +339,13 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         withBlockDevice(archiveName, openStream, localFile, device = device) { dev ->
             fun identify(target: BlockDevice): com.infinifolder.storage.FileSystemInfo? = when {
                 isIso9660(target, 0L) -> com.infinifolder.storage.FileSystemInfo("ISO 9660", null, "Image volume descriptor")
+                AtariAtrFileSystem.isSupported(target) -> com.infinifolder.storage.FileSystemInfo("Atari ATR", null, "Atari 8-bit sector image")
+                CommodoreDosFileSystem.isSupported(target) -> com.infinifolder.storage.FileSystemInfo("Commodore DOS", null, "D64/D71/D81 disk image")
+                ThreeDoOperaFileSystem.isSupported(target) -> com.infinifolder.storage.FileSystemInfo("3DO Opera", null, "3DO optical-disc filesystem")
+                AmstradDskFileSystem.isSupported(target) -> com.infinifolder.storage.FileSystemInfo("Amstrad CP/M", null, "CPCEMU standard/extended DSK image")
+                AppleTwoFileSystem.isSupported(target, appleSectorOrder(archiveName)) -> com.infinifolder.storage.FileSystemInfo("Apple II", null, "DOS 3.3 / ProDOS sector image")
+                BbcDfsFileSystem.isSupported(target, isBbcDoubleSided(archiveName)) -> com.infinifolder.storage.FileSystemInfo(
+                    "Acorn DFS", null, if (isBbcDoubleSided(archiveName)) "BBC Micro double-sided DFS image" else "BBC Micro single-sided DFS image")
                 isFatFs(target, 0L) -> FatFileSystem(target).fileSystemInfoWithSpace()
                 isExFat(target, 0L) -> com.infinifolder.storage.FileSystemInfo("exfat", null, "Image boot sector")
                 isExtFs(target, 0L) -> ExtFileSystem.info(target)
@@ -678,7 +727,7 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         }
     }
 
-    private fun parseDiscImage(dev: BlockDevice): List<DiscEntry> {
+    private fun parseDiscImage(dev: BlockDevice, archiveName: String): List<DiscEntry> {
         val length = dev.size
         if (length < 512) throw IOException("Disc image is too small ($length bytes)")
 
@@ -686,6 +735,16 @@ class DiscImageReader(private val tempDir: File, private val diskCache: com.infi
         if (isIso9660(dev, 0L)) {
             return parseIso9660(dev, 0L, "")
         }
+
+        // These legacy sector filesystems use native DOS directories, not PC filesystems.
+        if (AtariAtrFileSystem.isSupported(dev)) return AtariAtrFileSystem(dev).entries()
+        if (CommodoreDosFileSystem.isSupported(dev)) return CommodoreDosFileSystem(dev).entries()
+        if (ThreeDoOperaFileSystem.isSupported(dev)) return ThreeDoOperaFileSystem(dev).entries()
+        if (AmstradDskFileSystem.isSupported(dev)) return AmstradDskFileSystem(dev).entries()
+        val appleOrder = appleSectorOrder(archiveName)
+        if (AppleTwoFileSystem.isSupported(dev, appleOrder)) return AppleTwoFileSystem(dev, appleOrder).entries()
+        val bbcDoubleSided = isBbcDoubleSided(archiveName)
+        if (BbcDfsFileSystem.isSupported(dev, bbcDoubleSided)) return BbcDfsFileSystem(dev, bbcDoubleSided).entries()
 
         // 2. Check standalone LVM Physical Volume
         if (LvmDecoder.isLvm(dev, 0L)) {

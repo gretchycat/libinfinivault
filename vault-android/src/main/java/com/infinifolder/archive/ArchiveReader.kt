@@ -62,6 +62,7 @@ class ArchiveReader(private val tempDir: File, private val diskCache: com.infini
 
         val actualFormat = when (magic?.mimeType) {
             "application/x-iso9660-image", "application/x-raw-disk-image",
+            "application/x-3do-opera-image",
             "application/x-virtualbox-vdi", "application/x-qemu-disk",
             "application/x-vmdk", "application/x-vhd", "application/x-vhdx" -> rawExt to true
             "application/vnd.rar", "application/x-rar-compressed" -> compressedFormat("rar", magic.description) to false
