@@ -2,18 +2,19 @@ plugins { id("com.android.library"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "io.github.gretchycat.infinivault.vault.android"
     compileSdk = 36
+    ndkVersion = "27.2.12479018"
     defaultConfig { minSdk = 26; consumerProguardFiles("consumer-rules.pro") }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
-    if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+    if ((System.getenv("TERMUX_VERSION") != null)) {
         sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("extNative"))
     } else {
-        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     }
 }
 
-if (file("/data/data/com.termux/files/usr/bin/clang").isFile) {
+if ((System.getenv("TERMUX_VERSION") != null)) {
     val buildExtNative = tasks.register<Exec>("buildExtNative") {
         inputs.dir("src/main/cpp")
         outputs.dir(layout.buildDirectory.dir("extNative"))

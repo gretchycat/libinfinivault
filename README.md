@@ -1,5 +1,23 @@
 # libinfinivault
 
+## Reproducible standalone build
+
+Install JDK 17 or 21, Python 3, Android SDK platform 36/build tools 35.0.0,
+and (for JNI modules) NDK 27.2.12479018/CMake 3.22.1. Set `ANDROID_HOME` or
+this checkout's untracked `local.properties`. The checked-in Gradle 9.7.1 wrapper
+is verified by its distribution SHA-256.
+
+```sh
+python3 scripts/fetch-dependencies.py
+./gradlew :vault-android:testDebugUnitTest :vault-android:assembleDebug
+```
+
+The lock includes only this library's required source dependencies, including
+transitive dependencies. Fetching checks pin agreement and refuses to overwrite
+local changes. `python3 scripts/fetch-dependencies.py --check` checks revisions.
+No application checkout is required. CI uses the same commands from a fresh clone.
+
+
 Runtime discovery: [handler schema, registration, linked dependencies and limits](CAPABILITIES.md).
 
 Structural extraction from gretchycat/infinifolder at 9233495.
@@ -8,7 +26,7 @@ Implementation ownership and validation are recorded in SOURCE_PROVENANCE.md.
 Build using JDK 17+ and Gradle 9.7.1. Android adapters need SDK 36/min API 26.
 Run `gradle :vault-android:testDebugUnitTest` and the relevant assemble task.
 
-Source dependencies: libinfinistream, libinfinistore, libinfinisound. Clone them beside this repository (or set -PinfiniLibrariesDir). InfiniFolder pins the complete tested set as submodules; standalone builds use these same sources, not unpublished Maven binaries. Android codec/protocol backends remain in explicit Android modules.
+Source dependencies are pinned in `dependencies.lock.json` and fetched inside this checkout. No sibling source directories are used.
 
 Original-code licensing is pending owner selection; see LICENSE.md. No original implementation is rewritten or relicensed by this move.
 
@@ -74,3 +92,7 @@ Store's shared `DecoderMemory` caps XZ/LZMA and built-in Commons 7z dictionaries
 at one eighth of heap, clamped to 16–64 MiB; larger dictionary requirements fail
 with a memory-limit error. This is separate from disk-cache capacity. Unsupported
 native writes retain the existing archive publication/read-only rules.
+
+## Separation audit update
+
+Document-only ZIP expansion (VaultZipExtraction) moved to libinfiniscribe:scribe-office. It uses standard Java ZIP input; consumer apps do not acquire the archive/filesystem engine to read ebooks. The original class/package name is retained in the document library for source compatibility.

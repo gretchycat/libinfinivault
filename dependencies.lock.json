@@ -1,0 +1,21 @@
+{
+  "directory": "dependencies",
+  "repositories": {
+    "libinfinicore": {
+      "url": "https://github.com/gretchycat/libinfinicore.git",
+      "commit": "476fb2479bab8ddff17d188ad83939281c416ed8"
+    },
+    "libinfinisound": {
+      "url": "https://github.com/gretchycat/libinfinisound.git",
+      "commit": "a07ed9a78977fff86bab1948caff233360dd73fa"
+    },
+    "libinfinistore": {
+      "url": "https://github.com/gretchycat/libinfinistore.git",
+      "commit": "2323ad745dc7f82d25350101be857b7ed3651fd3"
+    },
+    "libinfinistream": {
+      "url": "https://github.com/gretchycat/libinfinistream.git",
+      "commit": "893584ff4605148df9116c431c240fcb4fb72c33"
+    }
+  }
+}
