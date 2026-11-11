@@ -3,19 +3,19 @@
   "repositories": {
     "libinfinicore": {
       "url": "https://github.com/gretchycat/libinfinicore.git",
-      "commit": "476fb2479bab8ddff17d188ad83939281c416ed8"
+      "commit": "1fb1c266ff037c6924571406af814ab638beb464"
     },
     "libinfinisound": {
       "url": "https://github.com/gretchycat/libinfinisound.git",
-      "commit": "a07ed9a78977fff86bab1948caff233360dd73fa"
+      "commit": "7a55de8617af185696a91e6b4d3548a6346163f2"
     },
     "libinfinistore": {
       "url": "https://github.com/gretchycat/libinfinistore.git",
-      "commit": "2323ad745dc7f82d25350101be857b7ed3651fd3"
+      "commit": "4f7a2f94500220c36e8e0dc8a46837f3ec0404ff"
     },
     "libinfinistream": {
       "url": "https://github.com/gretchycat/libinfinistream.git",
-      "commit": "893584ff4605148df9116c431c240fcb4fb72c33"
+      "commit": "0dcb1b17b0450d900d0581f2fd2c13bf0dd32e4d"
     }
   }
 }
